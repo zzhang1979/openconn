@@ -84,7 +84,7 @@ void Backend::loadProfiles() {
     m_activeIndex = 0;
     emit profilesChanged();
     emit activeIndexChanged();
-    emit activeProfileChanged();
+    emitActiveProfileSignals();
 }
 
 void Backend::saveProfiles() {
@@ -102,22 +102,148 @@ void Backend::saveProfiles() {
     }
 }
 
-QVariantList Backend::profiles() const {
-    return m_profilesData.toVariantList();
+QJsonObject Backend::currentProfileObject() const {
+    if (m_activeIndex >= 0 && m_activeIndex < m_profilesData.size()) {
+        return m_profilesData.at(m_activeIndex).toObject();
+    }
+    return QJsonObject();
 }
 
-QVariantMap Backend::activeProfile() const {
+void Backend::updateCurrentProfileField(const QString &key, const QJsonValue &value) {
     if (m_activeIndex >= 0 && m_activeIndex < m_profilesData.size()) {
-        return m_profilesData.at(m_activeIndex).toObject().toVariantMap();
+        QJsonObject obj = m_profilesData.at(m_activeIndex).toObject();
+        if (obj.value(key) != value) {
+            obj[key] = value;
+            m_profilesData[m_activeIndex] = obj;
+            saveProfiles();
+        }
     }
-    return QVariantMap();
+}
+
+QVariantList Backend::profiles() const {
+    return m_profilesData.toVariantList();
 }
 
 void Backend::setActiveIndex(int index) {
     if (index >= 0 && index < m_profilesData.size() && index != m_activeIndex) {
         m_activeIndex = index;
         emit activeIndexChanged();
-        emit activeProfileChanged();
+        emitActiveProfileSignals();
+    }
+}
+
+void Backend::emitActiveProfileSignals() {
+    emit profileNameChanged();
+    emit profileServerChanged();
+    emit profileProtocolChanged();
+    emit profileUsernameChanged();
+    emit profilePasswordChanged();
+    emit profileAuthgroupChanged();
+    emit profileServercertChanged();
+    emit profileAllowSelfSignedChanged();
+    emit profileExtraArgsChanged();
+}
+
+// Getters
+QString Backend::profileName() const {
+    return currentProfileObject().value("name").toString();
+}
+
+QString Backend::profileServer() const {
+    return currentProfileObject().value("server").toString();
+}
+
+QString Backend::profileProtocol() const {
+    QString p = currentProfileObject().value("protocol").toString();
+    return p.isEmpty() ? QString("anyconnect") : p;
+}
+
+QString Backend::profileUsername() const {
+    return currentProfileObject().value("username").toString();
+}
+
+QString Backend::profilePassword() const {
+    return currentProfileObject().value("password").toString();
+}
+
+QString Backend::profileAuthgroup() const {
+    return currentProfileObject().value("authgroup").toString();
+}
+
+QString Backend::profileServercert() const {
+    return currentProfileObject().value("servercert").toString();
+}
+
+bool Backend::profileAllowSelfSigned() const {
+    return currentProfileObject().value("allowSelfSigned").toBool(false);
+}
+
+QString Backend::profileExtraArgs() const {
+    return currentProfileObject().value("extraArgs").toString();
+}
+
+// Setters
+void Backend::setProfileName(const QString &val) {
+    if (profileName() != val) {
+        updateCurrentProfileField("name", val);
+        emit profileNameChanged();
+        emit profilesChanged();
+    }
+}
+
+void Backend::setProfileServer(const QString &val) {
+    if (profileServer() != val) {
+        updateCurrentProfileField("server", val);
+        emit profileServerChanged();
+    }
+}
+
+void Backend::setProfileProtocol(const QString &val) {
+    if (profileProtocol() != val) {
+        updateCurrentProfileField("protocol", val);
+        emit profileProtocolChanged();
+    }
+}
+
+void Backend::setProfileUsername(const QString &val) {
+    if (profileUsername() != val) {
+        updateCurrentProfileField("username", val);
+        emit profileUsernameChanged();
+    }
+}
+
+void Backend::setProfilePassword(const QString &val) {
+    if (profilePassword() != val) {
+        updateCurrentProfileField("password", val);
+        emit profilePasswordChanged();
+    }
+}
+
+void Backend::setProfileAuthgroup(const QString &val) {
+    if (profileAuthgroup() != val) {
+        updateCurrentProfileField("authgroup", val);
+        emit profileAuthgroupChanged();
+    }
+}
+
+void Backend::setProfileServercert(const QString &val) {
+    if (profileServercert() != val) {
+        updateCurrentProfileField("servercert", val);
+        emit profileServercertChanged();
+    }
+}
+
+void Backend::setProfileAllowSelfSigned(bool val) {
+    if (profileAllowSelfSigned() != val) {
+        updateCurrentProfileField("allowSelfSigned", val);
+        emit profileAllowSelfSignedChanged();
+    }
+}
+
+void Backend::setProfileExtraArgs(const QString &val) {
+    if (profileExtraArgs() != val) {
+        updateCurrentProfileField("extraArgs", val);
+        emit profileExtraArgsChanged();
     }
 }
 
@@ -140,7 +266,7 @@ void Backend::addProfile(const QString &name) {
 
     emit profilesChanged();
     emit activeIndexChanged();
-    emit activeProfileChanged();
+    emitActiveProfileSignals();
 }
 
 void Backend::removeProfile(int index) {
@@ -152,19 +278,7 @@ void Backend::removeProfile(int index) {
         }
         emit profilesChanged();
         emit activeIndexChanged();
-        emit activeProfileChanged();
-    }
-}
-
-void Backend::updateProfile(int index, const QVariantMap &data) {
-    if (index >= 0 && index < m_profilesData.size()) {
-        QJsonObject obj = QJsonObject::fromVariantMap(data);
-        m_profilesData[index] = obj;
-        saveProfiles();
-        emit profilesChanged();
-        if (index == m_activeIndex) {
-            emit activeProfileChanged();
-        }
+        emitActiveProfileSignals();
     }
 }
 
@@ -229,15 +343,14 @@ void Backend::connectVpn() {
         return;
     }
 
-    QVariantMap profile = activeProfile();
-    QString server = profile.value("server").toString().trimmed();
-    QString protocol = profile.value("protocol").toString().trimmed();
-    QString username = profile.value("username").toString().trimmed();
-    QString password = profile.value("password").toString();
-    QString authgroup = profile.value("authgroup").toString().trimmed();
-    QString servercert = profile.value("servercert").toString().trimmed();
-    bool allowSelfSigned = profile.value("allowSelfSigned").toBool();
-    QString extraArgs = profile.value("extraArgs").toString().trimmed();
+    QString server = profileServer().trimmed();
+    QString protocol = profileProtocol().trimmed();
+    QString username = profileUsername().trimmed();
+    QString password = profilePassword();
+    QString authgroup = profileAuthgroup().trimmed();
+    QString servercert = profileServercert().trimmed();
+    bool allowSelfSigned = profileAllowSelfSigned();
+    QString extraArgs = profileExtraArgs().trimmed();
 
     if (server.isEmpty()) {
         setState(Error, "Server URL is required");

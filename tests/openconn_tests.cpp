@@ -16,36 +16,37 @@ private slots:
 
         Backend backend(dir.path());
         QCOMPARE(backend.profiles().size(), 1);
-
-        QVariantMap initial = backend.activeProfile();
-        QCOMPARE(initial.value("name").toString(), QString("My VPN"));
-        QCOMPARE(initial.value("protocol").toString(), QString("anyconnect"));
+        QCOMPARE(backend.profileName(), QString("My VPN"));
+        QCOMPARE(backend.profileProtocol(), QString("anyconnect"));
     }
 
-    void testProfilePersistence() {
+    void testReactivePropertySettersAndPersistence() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
 
         {
             Backend backend(dir.path());
-            QVariantMap p = backend.activeProfile();
-            p["name"] = "Production Gateway";
-            p["server"] = "vpn.prod.net";
-            p["username"] = "alice";
-            p["password"] = "secret123";
-            p["protocol"] = "gp";
-            backend.updateProfile(0, p);
+            backend.setProfileName("Production Gateway");
+            backend.setProfileServer("vpn.prod.net");
+            backend.setProfileUsername("alice");
+            backend.setProfilePassword("secret123");
+            backend.setProfileProtocol("gp");
+
+            QCOMPARE(backend.profileName(), QString("Production Gateway"));
+            QCOMPARE(backend.profileServer(), QString("vpn.prod.net"));
+            QCOMPARE(backend.profileUsername(), QString("alice"));
+            QCOMPARE(backend.profilePassword(), QString("secret123"));
+            QCOMPARE(backend.profileProtocol(), QString("gp"));
         }
 
         {
             Backend reloaded(dir.path());
             QCOMPARE(reloaded.profiles().size(), 1);
-            QVariantMap p = reloaded.activeProfile();
-            QCOMPARE(p.value("name").toString(), QString("Production Gateway"));
-            QCOMPARE(p.value("server").toString(), QString("vpn.prod.net"));
-            QCOMPARE(p.value("username").toString(), QString("alice"));
-            QCOMPARE(p.value("password").toString(), QString("secret123"));
-            QCOMPARE(p.value("protocol").toString(), QString("gp"));
+            QCOMPARE(reloaded.profileName(), QString("Production Gateway"));
+            QCOMPARE(reloaded.profileServer(), QString("vpn.prod.net"));
+            QCOMPARE(reloaded.profileUsername(), QString("alice"));
+            QCOMPARE(reloaded.profilePassword(), QString("secret123"));
+            QCOMPARE(reloaded.profileProtocol(), QString("gp"));
         }
     }
 
@@ -57,7 +58,7 @@ private slots:
         backend.addProfile("Secondary VPN");
         QCOMPARE(backend.profiles().size(), 2);
         QCOMPARE(backend.activeIndex(), 1);
-        QCOMPARE(backend.activeProfile().value("name").toString(), QString("Secondary VPN"));
+        QCOMPARE(backend.profileName(), QString("Secondary VPN"));
 
         backend.removeProfile(1);
         QCOMPARE(backend.profiles().size(), 1);
@@ -85,7 +86,6 @@ private slots:
 
         Theme theme(dir.path());
         QCOMPARE(theme.accent(), QString("#FFD60A"));
-        // Light yellow accent requires dark foreground
         QCOMPARE(theme.accentForeground(), QString("#0F172A"));
     }
 };

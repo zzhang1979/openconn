@@ -20,9 +20,19 @@ class Backend : public QObject {
     Q_PROPERTY(QString vpnInterface READ vpnInterface NOTIFY vpnInterfaceChanged)
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY profilesChanged)
     Q_PROPERTY(int activeIndex READ activeIndex WRITE setActiveIndex NOTIFY activeIndexChanged)
-    Q_PROPERTY(QVariantMap activeProfile READ activeProfile NOTIFY activeProfileChanged)
     Q_PROPERTY(QString logs READ logs NOTIFY logsChanged)
     Q_PROPERTY(bool hasPolkitRule READ hasPolkitRule NOTIFY hasPolkitRuleChanged)
+
+    // Dedicated direct reactive properties for the active profile fields
+    Q_PROPERTY(QString profileName READ profileName WRITE setProfileName NOTIFY profileNameChanged)
+    Q_PROPERTY(QString profileServer READ profileServer WRITE setProfileServer NOTIFY profileServerChanged)
+    Q_PROPERTY(QString profileProtocol READ profileProtocol WRITE setProfileProtocol NOTIFY profileProtocolChanged)
+    Q_PROPERTY(QString profileUsername READ profileUsername WRITE setProfileUsername NOTIFY profileUsernameChanged)
+    Q_PROPERTY(QString profilePassword READ profilePassword WRITE setProfilePassword NOTIFY profilePasswordChanged)
+    Q_PROPERTY(QString profileAuthgroup READ profileAuthgroup WRITE setProfileAuthgroup NOTIFY profileAuthgroupChanged)
+    Q_PROPERTY(QString profileServercert READ profileServercert WRITE setProfileServercert NOTIFY profileServercertChanged)
+    Q_PROPERTY(bool profileAllowSelfSigned READ profileAllowSelfSigned WRITE setProfileAllowSelfSigned NOTIFY profileAllowSelfSignedChanged)
+    Q_PROPERTY(QString profileExtraArgs READ profileExtraArgs WRITE setProfileExtraArgs NOTIFY profileExtraArgsChanged)
 
 public:
     enum State {
@@ -44,9 +54,30 @@ public:
     QString vpnInterface() const { return m_vpnInterface; }
     QVariantList profiles() const;
     int activeIndex() const { return m_activeIndex; }
-    QVariantMap activeProfile() const;
     QString logs() const { return m_logs; }
     bool hasPolkitRule() const { return m_hasPolkitRule; }
+
+    // Active profile field getters
+    QString profileName() const;
+    QString profileServer() const;
+    QString profileProtocol() const;
+    QString profileUsername() const;
+    QString profilePassword() const;
+    QString profileAuthgroup() const;
+    QString profileServercert() const;
+    bool profileAllowSelfSigned() const;
+    QString profileExtraArgs() const;
+
+    // Active profile field setters
+    void setProfileName(const QString &val);
+    void setProfileServer(const QString &val);
+    void setProfileProtocol(const QString &val);
+    void setProfileUsername(const QString &val);
+    void setProfilePassword(const QString &val);
+    void setProfileAuthgroup(const QString &val);
+    void setProfileServercert(const QString &val);
+    void setProfileAllowSelfSigned(bool val);
+    void setProfileExtraArgs(const QString &val);
 
     void setActiveIndex(int index);
 
@@ -55,7 +86,6 @@ public:
     Q_INVOKABLE void toggleConnect();
     Q_INVOKABLE void addProfile(const QString &name = QString());
     Q_INVOKABLE void removeProfile(int index);
-    Q_INVOKABLE void updateProfile(int index, const QVariantMap &data);
     Q_INVOKABLE void clearLogs();
     Q_INVOKABLE QString getPolkitRuleSnippet() const;
 
@@ -67,9 +97,18 @@ signals:
     void vpnInterfaceChanged();
     void profilesChanged();
     void activeIndexChanged();
-    void activeProfileChanged();
     void logsChanged();
     void hasPolkitRuleChanged();
+
+    void profileNameChanged();
+    void profileServerChanged();
+    void profileProtocolChanged();
+    void profileUsernameChanged();
+    void profilePasswordChanged();
+    void profileAuthgroupChanged();
+    void profileServercertChanged();
+    void profileAllowSelfSignedChanged();
+    void profileExtraArgsChanged();
 
 private slots:
     void onProcessReadyRead();
@@ -84,6 +123,10 @@ private:
     void saveProfiles();
     void checkPolkitRule();
     void parseLogOutput(const QString &text);
+    void emitActiveProfileSignals();
+
+    QJsonObject currentProfileObject() const;
+    void updateCurrentProfileField(const QString &key, const QJsonValue &value);
 
     QString m_configDir;
     QString m_configFile;

@@ -31,7 +31,6 @@ ApplicationWindow {
     ]
 
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; onActivated: backend.toggleConnect() }
-    Shortcut { sequence: "Ctrl+S"; context: Qt.ApplicationShortcut; onActivated: saveActiveProfile() }
     Shortcut { sequence: "Ctrl+N"; context: Qt.ApplicationShortcut; onActivated: backend.addProfile() }
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
     Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; onActivated: root.showHelp = !root.showHelp }
@@ -41,20 +40,6 @@ ApplicationWindow {
             if (protocols[i].value === val) return i;
         }
         return 0;
-    }
-
-    function saveActiveProfile() {
-        var p = backend.activeProfile;
-        p.name = nameField.text.trim();
-        p.server = serverField.text.trim();
-        p.protocol = protocols[protocolCombo.currentIndex].value;
-        p.username = usernameField.text.trim();
-        p.password = passwordField.text;
-        p.authgroup = authgroupField.text.trim();
-        p.servercert = certField.text.trim();
-        p.allowSelfSigned = selfSignedSwitch.checked;
-        p.extraArgs = extraArgsField.text.trim();
-        backend.updateProfile(backend.activeIndex, p);
     }
 
     // Main layout
@@ -113,7 +98,6 @@ ApplicationWindow {
                     textRole: "name"
                     currentIndex: backend.activeIndex
                     onActivated: function(index) {
-                        saveActiveProfile();
                         backend.activeIndex = index;
                     }
                 }
@@ -144,10 +128,10 @@ ApplicationWindow {
                         TextField {
                             id: nameField
                             Layout.fillWidth: true
-                            text: backend.activeProfile.name || ""
+                            text: backend.profileName
                             placeholderText: "e.g. Work VPN"
                             selectByMouse: true
-                            onEditingFinished: saveActiveProfile()
+                            onTextEdited: backend.profileName = text
                         }
 
                         Label {
@@ -160,8 +144,8 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             model: protocols
                             textRole: "text"
-                            currentIndex: root.protocolIndex(backend.activeProfile.protocol)
-                            onActivated: saveActiveProfile()
+                            currentIndex: root.protocolIndex(backend.profileProtocol)
+                            onActivated: backend.profileProtocol = protocols[currentIndex].value
                         }
 
                         Label {
@@ -172,10 +156,10 @@ ApplicationWindow {
                         TextField {
                             id: serverField
                             Layout.fillWidth: true
-                            text: backend.activeProfile.server || ""
+                            text: backend.profileServer
                             placeholderText: "vpn.example.com or https://vpn..."
                             selectByMouse: true
-                            onEditingFinished: saveActiveProfile()
+                            onTextEdited: backend.profileServer = text
                         }
 
                         Label {
@@ -186,10 +170,10 @@ ApplicationWindow {
                         TextField {
                             id: usernameField
                             Layout.fillWidth: true
-                            text: backend.activeProfile.username || ""
+                            text: backend.profileUsername
                             placeholderText: "user@domain.com"
                             selectByMouse: true
-                            onEditingFinished: saveActiveProfile()
+                            onTextEdited: backend.profileUsername = text
                         }
 
                         Label {
@@ -204,11 +188,11 @@ ApplicationWindow {
                             TextField {
                                 id: passwordField
                                 Layout.fillWidth: true
-                                text: backend.activeProfile.password || ""
+                                text: backend.profilePassword
                                 placeholderText: "Saved password"
                                 echoMode: root.passwordVisible ? TextInput.Normal : TextInput.Password
                                 selectByMouse: true
-                                onEditingFinished: saveActiveProfile()
+                                onTextEdited: backend.profilePassword = text
                             }
 
                             Button {
@@ -242,10 +226,10 @@ ApplicationWindow {
                             TextField {
                                 id: authgroupField
                                 Layout.fillWidth: true
-                                text: backend.activeProfile.authgroup || ""
+                                text: backend.profileAuthgroup
                                 placeholderText: "e.g. Employee-VPN"
                                 selectByMouse: true
-                                onEditingFinished: saveActiveProfile()
+                                onTextEdited: backend.profileAuthgroup = text
                             }
 
                             Label {
@@ -256,17 +240,17 @@ ApplicationWindow {
                             TextField {
                                 id: certField
                                 Layout.fillWidth: true
-                                text: backend.activeProfile.servercert || ""
+                                text: backend.profileServercert
                                 placeholderText: "pin-sha256:... or sha1:..."
                                 selectByMouse: true
-                                onEditingFinished: saveActiveProfile()
+                                onTextEdited: backend.profileServercert = text
                             }
 
                             Switch {
                                 id: selfSignedSwitch
                                 text: "Allow untrusted/self-signed certs"
-                                checked: backend.activeProfile.allowSelfSigned || false
-                                onToggled: saveActiveProfile()
+                                checked: backend.profileAllowSelfSigned
+                                onToggled: backend.profileAllowSelfSigned = checked
                             }
 
                             Label {
@@ -277,20 +261,20 @@ ApplicationWindow {
                             TextField {
                                 id: extraArgsField
                                 Layout.fillWidth: true
-                                text: backend.activeProfile.extraArgs || ""
+                                text: backend.profileExtraArgs
                                 placeholderText: "--disable-ipv6 ..."
                                 selectByMouse: true
-                                onEditingFinished: saveActiveProfile()
+                                onTextEdited: backend.profileExtraArgs = text
                             }
                         }
 
                         Item { height: 8 }
 
-                        Button {
-                            Layout.fillWidth: true
-                            text: "Save Configuration (Ctrl+S)"
-                            highlighted: true
-                            onClicked: saveActiveProfile()
+                        Label {
+                            text: "✓ Settings save automatically as you type"
+                            font.pixelSize: 11
+                            color: "#10B981"
+                            Layout.alignment: Qt.AlignHCenter
                         }
                     }
                 }
@@ -338,7 +322,7 @@ ApplicationWindow {
                                 color: "#F8FAFC"
                             }
                             Label {
-                                text: backend.connectionState === 2 ? ("Target: " + (backend.activeProfile.server || "VPN")) : "Ready to connect"
+                                text: backend.connectionState === 2 ? ("Target: " + (backend.profileServer || "VPN")) : (backend.profileServer ? ("Configured: " + backend.profileServer) : "Ready to configure")
                                 font.pixelSize: 12
                                 color: "#94A3B8"
                             }
@@ -414,7 +398,6 @@ ApplicationWindow {
                         font.pixelSize: 15
                         font.bold: true
                         onClicked: {
-                            saveActiveProfile();
                             backend.toggleConnect();
                         }
                     }
@@ -496,7 +479,6 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 8
             Label { text: "Space: Toggle Connect / Disconnect"; color: "#E2E8F0" }
-            Label { text: "Ctrl+S: Save current profile"; color: "#E2E8F0" }
             Label { text: "Ctrl+N: Add new profile"; color: "#E2E8F0" }
             Label { text: "Q: Quit application"; color: "#E2E8F0" }
             Label { text: "?: Toggle this help dialog"; color: "#E2E8F0" }
