@@ -24,9 +24,9 @@ Backend::Backend(const QString &configDir, QObject *parent)
 }
 
 Backend::~Backend() {
-    if (m_process && m_process->state() != QProcess::NotRunning) {
-        disconnectVpn();
-        m_process->waitForFinished(2000);
+    disconnectVpn();
+    if (m_tunnelProcess && m_tunnelProcess->state() != QProcess::NotRunning) {
+        m_tunnelProcess->waitForFinished(1000);
     }
 }
 
@@ -358,9 +358,13 @@ void Backend::fetchCertificateFingerprint() {
 }
 
 void Backend::sendInput(const QString &text) {
-    if (m_process && m_process->state() != QProcess::NotRunning) {
-        appendLog(QString("[Terminal Input] > %1").arg(text));
-        m_process->write(text.toUtf8() + "\n");
+    appendLog(QString("[Terminal Input] > %1").arg(text));
+    QByteArray data = text.toUtf8() + "\n";
+    if (m_authProcess && m_authProcess->state() == QProcess::Running) {
+        m_authProcess->write(data);
+    }
+    if (m_tunnelProcess && m_tunnelProcess->state() == QProcess::Running) {
+        m_tunnelProcess->write(data);
     }
 }
 
@@ -370,15 +374,6 @@ void Backend::acceptServerCert() {
 
     appendLog("[OpenConn] Accepting server certificate...");
     sendInput("yes");
-
-    // After accepting cert, if password hasn't been provided yet, resend it
-    if (!profilePassword().isEmpty()) {
-        QTimer::singleShot(600, this, [this]() {
-            if (m_process && m_process->state() != QProcess::NotRunning) {
-                m_process->write(profilePassword().toUtf8() + "\n");
-            }
-        });
-    }
 }
 
 void Backend::parseLogOutput(const QString &text) {
@@ -453,34 +448,37 @@ void Backend::connectVpn() {
     }
 
     QString server = profileServer().trimmed();
-    QString protocol = profileProtocol().trimmed();
-    QString username = profileUsername().trimmed();
-    QString password = profilePassword();
-    QString authgroup = profileAuthgroup().trimmed();
-    QString servercert = profileServercert().trimmed();
-    bool allowSelfSigned = profileAllowSelfSigned();
-    QString extraArgs = profileExtraArgs().trimmed();
-
     if (server.isEmpty()) {
         setState(Error, "Server URL is required");
         appendLog("[Error] Please configure a Server/Gateway address before connecting.");
         return;
     }
 
-    // If allowSelfSigned is enabled and servercert is empty, auto-fetch fingerprint before connect!
-    if (servercert.isEmpty() && allowSelfSigned) {
-        appendLog("[OpenConn] Auto-fetching certificate fingerprint for untrusted server...");
-        servercert = fetchServerCert(server);
-        if (!servercert.isEmpty()) {
-            setProfileServercert(servercert);
-            appendLog(QString("[OpenConn] Trusted server fingerprint: %1").arg(servercert));
+    // Auto-fetch cert fingerprint if self-signed is allowed and field is blank
+    if (profileServercert().isEmpty() && profileAllowSelfSigned()) {
+        appendLog("[OpenConn] Querying certificate fingerprint for untrusted server...");
+        QString cert = fetchServerCert(server);
+        if (!cert.isEmpty()) {
+            setProfileServercert(cert);
+            appendLog(QString("[OpenConn] Trusted server fingerprint: %1").arg(cert));
         }
     }
+
+    startPhase1Auth();
+}
+
+void Backend::startPhase1Auth() {
+    QString server = profileServer().trimmed();
+    QString protocol = profileProtocol().trimmed();
+    QString username = profileUsername().trimmed();
+    QString password = profilePassword();
+    QString authgroup = profileAuthgroup().trimmed();
+    QString servercert = profileServercert().trimmed();
 
     m_waitingForCertPrompt = false;
     emit waitingForCertPromptChanged();
 
-    setState(Connecting, "Authenticating...");
+    setState(Connecting, "Authenticating with gateway...");
     m_assignedIp = "—";
     m_vpnInterface = "—";
     m_connectedTime = "00:00:00";
@@ -488,17 +486,21 @@ void Backend::connectVpn() {
     emit vpnInterfaceChanged();
     emit connectedTimeChanged();
 
-    appendLog(QString("[OpenConn] Starting connection to %1 (%2)...").arg(server, protocol));
+    appendLog(QString("[OpenConn] Authenticating with %1 (%2)...").arg(server, protocol));
 
-    if (m_process) {
-        m_process->deleteLater();
-        m_process = nullptr;
+    if (m_authProcess) {
+        m_authProcess->deleteLater();
+        m_authProcess = nullptr;
+    }
+    if (m_tunnelProcess) {
+        m_tunnelProcess->deleteLater();
+        m_tunnelProcess = nullptr;
     }
 
-    m_process = new QProcess(this);
+    m_authStdoutAccumulator.clear();
+    m_authProcess = new QProcess(this);
 
     QStringList arguments;
-    arguments << "/usr/bin/openconnect";
     arguments << server;
     if (!protocol.isEmpty()) {
         arguments << QString("--protocol=%1").arg(protocol);
@@ -507,31 +509,162 @@ void Backend::connectVpn() {
         arguments << QString("--user=%1").arg(username);
     }
     arguments << "--passwd-on-stdin";
+    arguments << "--authenticate";
     if (!authgroup.isEmpty()) {
         arguments << QString("--authgroup=%1").arg(authgroup);
     }
     if (!servercert.isEmpty()) {
         arguments << QString("--servercert=%1").arg(servercert);
     }
+
+    connect(m_authProcess, &QProcess::readyReadStandardOutput, this, &Backend::onAuthReadyRead);
+    connect(m_authProcess, &QProcess::readyReadStandardError, this, &Backend::onAuthReadyRead);
+    connect(m_authProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &Backend::onAuthFinished);
+    connect(m_authProcess, &QProcess::errorOccurred, this, &Backend::onProcessError);
+
+    // Launch Phase 1 directly in user space
+    m_authProcess->start("/usr/bin/openconnect", arguments);
+
+    if (m_authProcess->waitForStarted(2000)) {
+        if (!password.isEmpty()) {
+            m_authProcess->write(password.toUtf8() + "\n");
+        }
+    }
+}
+
+void Backend::onAuthReadyRead() {
+    if (!m_authProcess) return;
+
+    QByteArray out = m_authProcess->readAllStandardOutput();
+    if (!out.isEmpty()) {
+        QString text = QString::fromUtf8(out);
+        m_authStdoutAccumulator += text;
+        const auto lines = text.split('\n', Qt::SkipEmptyParts);
+        for (const auto &line : lines) {
+            appendLog(line);
+        }
+    }
+
+    QByteArray err = m_authProcess->readAllStandardError();
+    if (!err.isEmpty()) {
+        QString text = QString::fromUtf8(err);
+        const auto lines = text.split('\n', Qt::SkipEmptyParts);
+        for (const auto &line : lines) {
+            appendLog(line);
+        }
+    }
+}
+
+void Backend::onAuthFinished(int exitCode, QProcess::ExitStatus exitStatus) {
+    Q_UNUSED(exitStatus);
+    if (m_state != Connecting) return;
+
+    if (exitCode != 0 || !m_authStdoutAccumulator.contains("COOKIE=")) {
+        appendLog(QString("[OpenConn] Phase 1 authentication failed (exit code %1).").arg(exitCode));
+        setState(Error, "Authentication failed. Check credentials/server.");
+        return;
+    }
+
+    appendLog("[OpenConn] Authentication successful! Session cookie obtained.");
+
+    // Parse variables from Phase 1 output
+    static const QRegularExpression cookieRegex(R"re(COOKIE='([^']+)')re");
+    static const QRegularExpression urlRegex(R"re(CONNECT_URL='([^']+)')re");
+    static const QRegularExpression fpRegex(R"re(FINGERPRINT='([^']+)')re");
+    static const QRegularExpression resolveRegex(R"re(RESOLVE='([^']+)')re");
+
+    auto mCookie = cookieRegex.match(m_authStdoutAccumulator);
+    auto mUrl = urlRegex.match(m_authStdoutAccumulator);
+    auto mFp = fpRegex.match(m_authStdoutAccumulator);
+    auto mResolve = resolveRegex.match(m_authStdoutAccumulator);
+
+    QString cookie = mCookie.hasMatch() ? mCookie.captured(1) : QString();
+    QString connectUrl = mUrl.hasMatch() ? mUrl.captured(1) : profileServer();
+    QString fingerprint = mFp.hasMatch() ? mFp.captured(1) : profileServercert();
+    QString resolve = mResolve.hasMatch() ? mResolve.captured(1) : QString();
+
+    if (cookie.isEmpty()) {
+        setState(Error, "Could not extract session cookie.");
+        return;
+    }
+
+    startPhase2Tunnel(cookie, connectUrl, fingerprint, resolve);
+}
+
+void Backend::startPhase2Tunnel(const QString &cookie, const QString &connectUrl,
+                                const QString &fingerprint, const QString &resolve) {
+    setState(Connecting, "Establishing VPN tunnel (elevating)...");
+    appendLog("[OpenConn] Launching elevated tunnel connection with session cookie...");
+
+    m_tunnelProcess = new QProcess(this);
+
+    QString currentUser = QString::fromUtf8(qgetenv("USER"));
+    if (currentUser.isEmpty()) currentUser = "anthony";
+
+    QStringList arguments;
+    arguments << "/usr/bin/openconnect";
+    arguments << QString("-C%1").arg(cookie);
+    arguments << connectUrl;
+    if (!fingerprint.isEmpty()) {
+        arguments << QString("--servercert=%1").arg(fingerprint);
+    }
+    if (!resolve.isEmpty()) {
+        arguments << QString("--resolve=%1").arg(resolve);
+    }
+    arguments << QString("--setuid=%1").arg(currentUser);
+
+    QString extraArgs = profileExtraArgs().trimmed();
     if (!extraArgs.isEmpty()) {
         arguments << extraArgs.split(" ", Qt::SkipEmptyParts);
     }
 
-    connect(m_process, &QProcess::readyReadStandardOutput, this, &Backend::onProcessReadyRead);
-    connect(m_process, &QProcess::readyReadStandardError, this, &Backend::onProcessReadyRead);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &Backend::onProcessFinished);
-    connect(m_process, &QProcess::errorOccurred, this, &Backend::onProcessError);
+    connect(m_tunnelProcess, &QProcess::readyReadStandardOutput, this, &Backend::onTunnelReadyRead);
+    connect(m_tunnelProcess, &QProcess::readyReadStandardError, this, &Backend::onTunnelReadyRead);
+    connect(m_tunnelProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &Backend::onTunnelFinished);
+    connect(m_tunnelProcess, &QProcess::errorOccurred, this, &Backend::onProcessError);
 
-    // Run openconnect elevated with pkexec
-    m_process->start("pkexec", arguments);
+    // Launch Phase 2 elevated with pkexec
+    m_tunnelProcess->start("pkexec", arguments);
+}
 
-    // Provide the saved password via stdin immediately
-    if (m_process->waitForStarted(2000)) {
-        if (!password.isEmpty()) {
-            m_process->write(password.toUtf8() + "\n");
+void Backend::onTunnelReadyRead() {
+    if (!m_tunnelProcess) return;
+
+    QByteArray out = m_tunnelProcess->readAllStandardOutput();
+    if (!out.isEmpty()) {
+        QString text = QString::fromUtf8(out);
+        const auto lines = text.split('\n', Qt::SkipEmptyParts);
+        for (const auto &line : lines) {
+            appendLog(line);
         }
     }
+
+    QByteArray err = m_tunnelProcess->readAllStandardError();
+    if (!err.isEmpty()) {
+        QString text = QString::fromUtf8(err);
+        const auto lines = text.split('\n', Qt::SkipEmptyParts);
+        for (const auto &line : lines) {
+            appendLog(line);
+        }
+    }
+}
+
+void Backend::onTunnelFinished(int exitCode, QProcess::ExitStatus exitStatus) {
+    Q_UNUSED(exitStatus);
+    m_durationTimer->stop();
+    appendLog(QString("[OpenConn] Tunnel process terminated (exit code: %1).").arg(exitCode));
+
+    if (m_state == Disconnecting || exitCode == 0) {
+        setState(Disconnected, "Disconnected");
+    } else {
+        setState(Error, QString("Tunnel closed (code %1)").arg(exitCode));
+    }
+    m_assignedIp = "—";
+    m_vpnInterface = "—";
+    emit assignedIpChanged();
+    emit vpnInterfaceChanged();
 }
 
 void Backend::disconnectVpn() {
@@ -542,20 +675,23 @@ void Backend::disconnectVpn() {
 
     setState(Disconnecting, "Disconnecting...");
     m_durationTimer->stop();
-    appendLog("[OpenConn] Sending termination signal to disconnect cleanly...");
+    appendLog("[OpenConn] Terminating connection...");
 
-    if (m_process && m_process->state() != QProcess::NotRunning) {
-        // Send SIGINT so openconnect executes its teardown vpnc-script
-        pid_t pid = m_process->processId();
+    if (m_authProcess && m_authProcess->state() != QProcess::NotRunning) {
+        m_authProcess->terminate();
+        m_authProcess->kill();
+    }
+
+    if (m_tunnelProcess && m_tunnelProcess->state() != QProcess::NotRunning) {
+        pid_t pid = m_tunnelProcess->processId();
         if (pid > 0) {
             ::kill(pid, SIGINT);
         }
-        m_process->terminate();
+        m_tunnelProcess->terminate();
 
-        QTimer::singleShot(4000, this, [this]() {
-            if (m_process && m_process->state() != QProcess::NotRunning) {
-                appendLog("[OpenConn] Process did not terminate; forcing kill.");
-                m_process->kill();
+        QTimer::singleShot(3000, this, [this]() {
+            if (m_tunnelProcess && m_tunnelProcess->state() != QProcess::NotRunning) {
+                m_tunnelProcess->kill();
             }
         });
     } else {
@@ -571,47 +707,6 @@ void Backend::toggleConnect() {
     }
 }
 
-void Backend::onProcessReadyRead() {
-    if (!m_process) return;
-
-    QByteArray out = m_process->readAllStandardOutput();
-    if (!out.isEmpty()) {
-        QString text = QString::fromUtf8(out);
-        const auto lines = text.split('\n', Qt::SkipEmptyParts);
-        for (const auto &line : lines) {
-            appendLog(line);
-        }
-    }
-
-    QByteArray err = m_process->readAllStandardError();
-    if (!err.isEmpty()) {
-        QString text = QString::fromUtf8(err);
-        const auto lines = text.split('\n', Qt::SkipEmptyParts);
-        for (const auto &line : lines) {
-            appendLog(line);
-        }
-    }
-}
-
-void Backend::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-    Q_UNUSED(exitStatus);
-    m_waitingForCertPrompt = false;
-    emit waitingForCertPromptChanged();
-
-    m_durationTimer->stop();
-    appendLog(QString("[OpenConn] Connection process ended (exit code: %1).").arg(exitCode));
-
-    if (m_state == Disconnecting || exitCode == 0) {
-        setState(Disconnected, "Disconnected");
-    } else {
-        setState(Error, QString("Failed (code %1)").arg(exitCode));
-    }
-    m_assignedIp = "—";
-    m_vpnInterface = "—";
-    emit assignedIpChanged();
-    emit vpnInterfaceChanged();
-}
-
 void Backend::onProcessError(QProcess::ProcessError error) {
     if (m_state == Disconnecting) return;
 
@@ -621,16 +716,16 @@ void Backend::onProcessError(QProcess::ProcessError error) {
     QString errorMsg;
     switch (error) {
     case QProcess::FailedToStart:
-        errorMsg = "Failed to launch pkexec/openconnect. Check if pkexec is available.";
+        errorMsg = "Failed to launch OpenConnect process. Check if openconnect/pkexec is installed.";
         break;
     case QProcess::Crashed:
-        errorMsg = "OpenConnect process crashed unexpectedly.";
+        errorMsg = "OpenConnect process exited unexpectedly.";
         break;
     case QProcess::Timedout:
-        errorMsg = "Connection timed out.";
+        errorMsg = "Process operation timed out.";
         break;
     default:
-        errorMsg = "An error occurred with the OpenConnect process.";
+        errorMsg = "Process error occurred.";
         break;
     }
 

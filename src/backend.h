@@ -119,8 +119,10 @@ signals:
     void profileExtraArgsChanged();
 
 private slots:
-    void onProcessReadyRead();
-    void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onAuthReadyRead();
+    void onAuthFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onTunnelReadyRead();
+    void onTunnelFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void onProcessError(QProcess::ProcessError error);
     void onTimerTick();
 
@@ -132,6 +134,9 @@ private:
     void checkPolkitRule();
     void parseLogOutput(const QString &text);
     void emitActiveProfileSignals();
+
+    void startPhase1Auth();
+    void startPhase2Tunnel(const QString &cookie, const QString &connectUrl, const QString &fingerprint, const QString &resolve);
 
     QJsonObject currentProfileObject() const;
     void updateCurrentProfileField(const QString &key, const QJsonValue &value);
@@ -150,7 +155,9 @@ private:
     bool m_hasPolkitRule{false};
     bool m_waitingForCertPrompt{false};
 
-    QProcess *m_process{nullptr};
+    QProcess *m_authProcess{nullptr};
+    QProcess *m_tunnelProcess{nullptr};
+    QString m_authStdoutAccumulator;
     QTimer *m_durationTimer{nullptr};
     qint64 m_connectedTimestamp{0};
 };
