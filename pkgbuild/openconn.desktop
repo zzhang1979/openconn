@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OpenConn
+Comment=OpenConnect SSL VPN Client
+Exec=openconn %u
+Icon=openconn
+Terminal=false
+Categories=Network;VPN;Utility;
+StartupWMClass=openconn
+Keywords=vpn;cisco;anyconnect;globalprotect;pulse;openconnect;

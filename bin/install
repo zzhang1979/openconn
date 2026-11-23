@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+
+# User-space desktop installation (works immediately without root sudo prompts)
+mkdir -p "$HOME/.local/bin"
+mkdir -p "$HOME/.local/share/applications"
+mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
+
+cp -f "$ROOT/build/openconn" "$HOME/.local/bin/openconn"
+chmod +x "$HOME/.local/bin/openconn"
+cp -f "$ROOT/pkgbuild/openconn.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/openconn.svg"
+
+# Prepare desktop entry pointing to user binary if ~/.local/bin is used
+sed "s|^Exec=openconn|Exec=$HOME/.local/bin/openconn|" "$ROOT/pkgbuild/openconn.desktop" > "$HOME/.local/share/applications/openconn.desktop"
+
+# Update desktop database if available
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" || true
+fi
+
+echo "Installed OpenConn to $HOME/.local/bin/openconn and registered in application launcher!"

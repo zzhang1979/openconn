@@ -1,0 +1,5 @@
+build/
+.qmake.stash
+*.o
+moc_*
+qrc_*
