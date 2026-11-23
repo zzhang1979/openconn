@@ -227,15 +227,25 @@ ApplicationWindow {
                                 id: authgroupField
                                 Layout.fillWidth: true
                                 text: backend.profileAuthgroup
-                                placeholderText: "e.g. Employee-VPN"
+                                placeholderText: "e.g. Employee-VPN or RA-VPN"
                                 selectByMouse: true
                                 onTextEdited: backend.profileAuthgroup = text
                             }
 
-                            Label {
-                                text: "Server Cert Fingerprint (Optional)"
-                                color: "#94A3B8"
-                                font.pixelSize: 12
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label {
+                                    text: "Server Cert Fingerprint"
+                                    color: "#94A3B8"
+                                    font.pixelSize: 12
+                                }
+                                Item { Layout.fillWidth: true }
+                                Button {
+                                    text: "Fetch Fingerprint"
+                                    flat: true
+                                    Material.foreground: theme.accent
+                                    onClicked: backend.fetchCertificateFingerprint()
+                                }
                             }
                             TextField {
                                 id: certField
@@ -416,6 +426,7 @@ ApplicationWindow {
                     anchors.margins: 16
                     spacing: 8
 
+                    // Header row with Clear button
                     RowLayout {
                         Layout.fillWidth: true
                         Label {
@@ -432,6 +443,43 @@ ApplicationWindow {
                         }
                     }
 
+                    // Certificate Alert Banner when prompt is detected
+                    Rectangle {
+                        visible: backend.waitingForCertPrompt
+                        Layout.fillWidth: true
+                        height: 48
+                        color: "#78350F"
+                        radius: 6
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 10
+
+                            Label {
+                                text: "⚠️ Server certificate not trusted by system CA."
+                                color: "#FEF3C7"
+                                font.pixelSize: 12
+                                Layout.fillWidth: true
+                            }
+
+                            Button {
+                                text: "Trust & Accept (yes)"
+                                highlighted: true
+                                Material.background: "#10B981"
+                                onClicked: backend.acceptServerCert()
+                            }
+
+                            Button {
+                                text: "Abort (no)"
+                                flat: true
+                                Material.foreground: "#FCA5A5"
+                                onClicked: backend.sendInput("no")
+                            }
+                        }
+                    }
+
+                    // Console output area
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -456,6 +504,36 @@ ApplicationWindow {
                                 background: null
                                 onTextChanged: {
                                     logScroll.ScrollBar.vertical.position = 1.0 - logScroll.ScrollBar.vertical.size;
+                                }
+                            }
+                        }
+                    }
+
+                    // Interactive Terminal Input Row
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        TextField {
+                            id: terminalInput
+                            Layout.fillWidth: true
+                            placeholderText: "Type response (e.g. yes, 2FA code, OTP) and press Enter..."
+                            selectByMouse: true
+                            onAccepted: {
+                                if (text.trim().length > 0) {
+                                    backend.sendInput(text.trim());
+                                    text = "";
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: "Send"
+                            highlighted: true
+                            onClicked: {
+                                if (terminalInput.text.trim().length > 0) {
+                                    backend.sendInput(terminalInput.text.trim());
+                                    terminalInput.text = "";
                                 }
                             }
                         }

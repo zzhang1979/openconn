@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QUrl>
 #include <QUuid>
 #include <csignal>
 #include <sys/types.h>
@@ -297,6 +298,89 @@ void Backend::appendLog(const QString &line) {
     parseLogOutput(line);
 }
 
+QString Backend::fetchServerCert(const QString &server) {
+    QString raw = server.trimmed();
+    if (raw.isEmpty()) return QString();
+
+    QString host = raw;
+    int port = 443;
+
+    if (host.startsWith("https://", Qt::CaseInsensitive)) {
+        host = host.mid(8);
+    } else if (host.startsWith("http://", Qt::CaseInsensitive)) {
+        host = host.mid(7);
+    }
+
+    if (host.contains("/")) {
+        host = host.section('/', 0, 0);
+    }
+
+    if (host.contains(":")) {
+        port = host.section(':', 1, 1).toInt();
+        host = host.section(':', 0, 0);
+        if (port <= 0) port = 443;
+    }
+
+    QProcess proc;
+    QString cmd = QString(
+        "echo | openssl s_client -connect %1:%2 2>/dev/null | "
+        "openssl x509 -pubkey -noout | "
+        "openssl pkey -pubin -outform der | "
+        "openssl dgst -sha256 -binary | "
+        "openssl enc -base64"
+    ).arg(host).arg(port);
+
+    proc.start("sh", {"-c", cmd});
+    if (proc.waitForFinished(4000)) {
+        QString hash = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+        if (!hash.isEmpty()) {
+            return QString("pin-sha256:%1").arg(hash);
+        }
+    }
+    return QString();
+}
+
+void Backend::fetchCertificateFingerprint() {
+    QString server = profileServer();
+    if (server.isEmpty()) {
+        appendLog("[OpenConn] Server address is empty; cannot fetch certificate.");
+        return;
+    }
+
+    appendLog(QString("[OpenConn] Querying certificate from %1...").arg(server));
+    QString fp = fetchServerCert(server);
+    if (!fp.isEmpty()) {
+        setProfileServercert(fp);
+        appendLog(QString("[OpenConn] Successfully fetched server fingerprint: %1").arg(fp));
+    } else {
+        appendLog("[OpenConn] Failed to retrieve server certificate. Please check server URL and port.");
+    }
+}
+
+void Backend::sendInput(const QString &text) {
+    if (m_process && m_process->state() != QProcess::NotRunning) {
+        appendLog(QString("[Terminal Input] > %1").arg(text));
+        m_process->write(text.toUtf8() + "\n");
+    }
+}
+
+void Backend::acceptServerCert() {
+    m_waitingForCertPrompt = false;
+    emit waitingForCertPromptChanged();
+
+    appendLog("[OpenConn] Accepting server certificate...");
+    sendInput("yes");
+
+    // After accepting cert, if password hasn't been provided yet, resend it
+    if (!profilePassword().isEmpty()) {
+        QTimer::singleShot(600, this, [this]() {
+            if (m_process && m_process->state() != QProcess::NotRunning) {
+                m_process->write(profilePassword().toUtf8() + "\n");
+            }
+        });
+    }
+}
+
 void Backend::parseLogOutput(const QString &text) {
     // Detect assigned IP
     static const QRegularExpression ipRegex(R"re(Connected as\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+))re");
@@ -314,11 +398,36 @@ void Backend::parseLogOutput(const QString &text) {
         emit vpnInterfaceChanged();
     }
 
+    // Detect servercert suggestion from openconnect
+    static const QRegularExpression certRegex(R"re(--servercert\s+(pin-sha256:[^\s\r\n]+|[0-9a-fA-F]{40,}))re");
+    auto matchCert = certRegex.match(text);
+    if (matchCert.hasMatch()) {
+        QString fingerprint = matchCert.captured(1);
+        if (profileServercert() != fingerprint) {
+            setProfileServercert(fingerprint);
+            appendLog(QString("[OpenConn] Auto-saved server certificate: %1").arg(fingerprint));
+        }
+    }
+
+    // Detect certificate confirmation prompt
+    if (text.contains("Enter 'yes' to accept") || text.contains("failed verification")) {
+        m_waitingForCertPrompt = true;
+        emit waitingForCertPromptChanged();
+
+        if (profileAllowSelfSigned()) {
+            appendLog("[OpenConn] Auto-accepting server certificate (Allow self-signed is ON)...");
+            acceptServerCert();
+        }
+    }
+
     // Detect successful tunnel establishment
     if (text.contains("Established DTLS connection") ||
         text.contains("Connected as ") ||
         text.contains("Session established") ||
         (text.contains("POST https") && text.contains("Connected"))) {
+        m_waitingForCertPrompt = false;
+        emit waitingForCertPromptChanged();
+
         if (m_state != Connected) {
             setState(Connected, "Connected");
             m_connectedTimestamp = QDateTime::currentSecsSinceEpoch();
@@ -358,6 +467,19 @@ void Backend::connectVpn() {
         return;
     }
 
+    // If allowSelfSigned is enabled and servercert is empty, auto-fetch fingerprint before connect!
+    if (servercert.isEmpty() && allowSelfSigned) {
+        appendLog("[OpenConn] Auto-fetching certificate fingerprint for untrusted server...");
+        servercert = fetchServerCert(server);
+        if (!servercert.isEmpty()) {
+            setProfileServercert(servercert);
+            appendLog(QString("[OpenConn] Trusted server fingerprint: %1").arg(servercert));
+        }
+    }
+
+    m_waitingForCertPrompt = false;
+    emit waitingForCertPromptChanged();
+
     setState(Connecting, "Authenticating...");
     m_assignedIp = "—";
     m_vpnInterface = "—";
@@ -391,9 +513,6 @@ void Backend::connectVpn() {
     if (!servercert.isEmpty()) {
         arguments << QString("--servercert=%1").arg(servercert);
     }
-    if (allowSelfSigned) {
-        arguments << "--no-system-trust";
-    }
     if (!extraArgs.isEmpty()) {
         arguments << extraArgs.split(" ", Qt::SkipEmptyParts);
     }
@@ -417,6 +536,9 @@ void Backend::connectVpn() {
 
 void Backend::disconnectVpn() {
     if (m_state == Disconnected) return;
+
+    m_waitingForCertPrompt = false;
+    emit waitingForCertPromptChanged();
 
     setState(Disconnecting, "Disconnecting...");
     m_durationTimer->stop();
@@ -473,6 +595,9 @@ void Backend::onProcessReadyRead() {
 
 void Backend::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
     Q_UNUSED(exitStatus);
+    m_waitingForCertPrompt = false;
+    emit waitingForCertPromptChanged();
+
     m_durationTimer->stop();
     appendLog(QString("[OpenConn] Connection process ended (exit code: %1).").arg(exitCode));
 
@@ -489,6 +614,9 @@ void Backend::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
 
 void Backend::onProcessError(QProcess::ProcessError error) {
     if (m_state == Disconnecting) return;
+
+    m_waitingForCertPrompt = false;
+    emit waitingForCertPromptChanged();
 
     QString errorMsg;
     switch (error) {

@@ -22,6 +22,7 @@ class Backend : public QObject {
     Q_PROPERTY(int activeIndex READ activeIndex WRITE setActiveIndex NOTIFY activeIndexChanged)
     Q_PROPERTY(QString logs READ logs NOTIFY logsChanged)
     Q_PROPERTY(bool hasPolkitRule READ hasPolkitRule NOTIFY hasPolkitRuleChanged)
+    Q_PROPERTY(bool waitingForCertPrompt READ waitingForCertPrompt NOTIFY waitingForCertPromptChanged)
 
     // Dedicated direct reactive properties for the active profile fields
     Q_PROPERTY(QString profileName READ profileName WRITE setProfileName NOTIFY profileNameChanged)
@@ -56,6 +57,7 @@ public:
     int activeIndex() const { return m_activeIndex; }
     QString logs() const { return m_logs; }
     bool hasPolkitRule() const { return m_hasPolkitRule; }
+    bool waitingForCertPrompt() const { return m_waitingForCertPrompt; }
 
     // Active profile field getters
     QString profileName() const;
@@ -87,7 +89,12 @@ public:
     Q_INVOKABLE void addProfile(const QString &name = QString());
     Q_INVOKABLE void removeProfile(int index);
     Q_INVOKABLE void clearLogs();
+    Q_INVOKABLE void sendInput(const QString &text);
+    Q_INVOKABLE void acceptServerCert();
+    Q_INVOKABLE void fetchCertificateFingerprint();
     Q_INVOKABLE QString getPolkitRuleSnippet() const;
+
+    static QString fetchServerCert(const QString &server);
 
 signals:
     void connectionStateChanged();
@@ -99,6 +106,7 @@ signals:
     void activeIndexChanged();
     void logsChanged();
     void hasPolkitRuleChanged();
+    void waitingForCertPromptChanged();
 
     void profileNameChanged();
     void profileServerChanged();
@@ -140,6 +148,7 @@ private:
     QString m_vpnInterface{"—"};
     QString m_logs;
     bool m_hasPolkitRule{false};
+    bool m_waitingForCertPrompt{false};
 
     QProcess *m_process{nullptr};
     QTimer *m_durationTimer{nullptr};
