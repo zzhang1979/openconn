@@ -1,4 +1,4 @@
-QT += core gui quick quickcontrols2 testlib
+QT += core gui quick quickcontrols2 testlib network
 
 CONFIG += c++17 testcase
 TARGET = openconn_tests

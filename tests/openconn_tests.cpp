@@ -88,6 +88,21 @@ private slots:
         QCOMPARE(theme.accent(), QString("#FFD60A"));
         QCOMPARE(theme.accentForeground(), QString("#0F172A"));
     }
+
+    void testConfiguredAsConnectionDetection() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        Backend backend(dir.path());
+        QCOMPARE(backend.connectionState(), Backend::Disconnected);
+
+        // Simulate OpenConnect output line from user's session
+        backend.simulateLogLine("Configured as 10.31.10.62, with SSL connected and DTLS in progress");
+
+        QCOMPARE(backend.connectionState(), Backend::Connected);
+        QCOMPARE(backend.statusText(), QString("Connected"));
+        QCOMPARE(backend.assignedIp(), QString("10.31.10.62"));
+    }
 };
 
 QTEST_MAIN(OpenConnTests)

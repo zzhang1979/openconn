@@ -93,6 +93,7 @@ public:
     Q_INVOKABLE void acceptServerCert();
     Q_INVOKABLE void fetchCertificateFingerprint();
     Q_INVOKABLE QString getPolkitRuleSnippet() const;
+    Q_INVOKABLE void simulateLogLine(const QString &line) { parseLogOutput(line); }
 
     static QString fetchServerCert(const QString &server);
 
@@ -137,6 +138,7 @@ private:
 
     void startPhase1Auth();
     void startPhase2Tunnel(const QString &cookie, const QString &connectUrl, const QString &fingerprint, const QString &resolve);
+    void refreshInterfaceName();
 
     QJsonObject currentProfileObject() const;
     void updateCurrentProfileField(const QString &key, const QJsonValue &value);

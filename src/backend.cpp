@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QNetworkInterface>
 #include <QRegularExpression>
 #include <QUrl>
 #include <QUuid>
@@ -376,17 +377,42 @@ void Backend::acceptServerCert() {
     sendInput("yes");
 }
 
+void Backend::refreshInterfaceName() {
+    for (const auto &iface : QNetworkInterface::allInterfaces()) {
+        const QString name = iface.name();
+        if (name.startsWith("tun") || name.startsWith("tap") || name.startsWith("vpn") || name.startsWith("csco")) {
+            if (m_assignedIp != "—" && !m_assignedIp.isEmpty()) {
+                for (const auto &entry : iface.addressEntries()) {
+                    if (entry.ip().toString() == m_assignedIp) {
+                        if (m_vpnInterface != name) {
+                            m_vpnInterface = name;
+                            emit vpnInterfaceChanged();
+                        }
+                        return;
+                    }
+                }
+            }
+            if (m_vpnInterface == "—" || m_vpnInterface.isEmpty()) {
+                m_vpnInterface = name;
+                emit vpnInterfaceChanged();
+            }
+        }
+    }
+}
+
 void Backend::parseLogOutput(const QString &text) {
-    // Detect assigned IP
-    static const QRegularExpression ipRegex(R"re(Connected as\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+))re");
+    // Detect assigned IP:
+    // Matches "Configured as 10.31.10.62" or "Connected as 10.31.10.62"
+    static const QRegularExpression ipRegex(R"re((?:Connected as|Configured as)\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+))re");
     auto matchIp = ipRegex.match(text);
     if (matchIp.hasMatch()) {
         m_assignedIp = matchIp.captured(1);
         emit assignedIpChanged();
+        refreshInterfaceName();
     }
 
-    // Detect interface
-    static const QRegularExpression ifRegex(R"re(Configured (tun[0-9]+|tap[0-9]+|vpn[0-9]+))re");
+    // Detect interface if explicitly printed in logs
+    static const QRegularExpression ifRegex(R"re((?:Configured|Opened|Using device|Using interface)\s+(?:device\s+)?(tun[0-9]+|tap[0-9]+|vpn[0-9]+|cscotun[0-9]+))re");
     auto matchIf = ifRegex.match(text);
     if (matchIf.hasMatch()) {
         m_vpnInterface = matchIf.captured(1);
@@ -415,11 +441,16 @@ void Backend::parseLogOutput(const QString &text) {
         }
     }
 
-    // Detect successful tunnel establishment
-    if (text.contains("Established DTLS connection") ||
+    // Detect successful tunnel establishment:
+    // Matches OpenConnect indicators: "Configured as ", "CSTP connected", "Session authentication will expire", etc.
+    if (text.contains("Configured as ") ||
+        text.contains("CSTP connected") ||
+        text.contains("Established DTLS connection") ||
         text.contains("Connected as ") ||
         text.contains("Session established") ||
-        (text.contains("POST https") && text.contains("Connected"))) {
+        text.contains("SSL connected") ||
+        text.contains("Session authentication will expire") ||
+        text.contains("Using vhost-net for tun acceleration")) {
         m_waitingForCertPrompt = false;
         emit waitingForCertPromptChanged();
 
@@ -427,6 +458,10 @@ void Backend::parseLogOutput(const QString &text) {
             setState(Connected, "Connected");
             m_connectedTimestamp = QDateTime::currentSecsSinceEpoch();
             m_durationTimer->start();
+            refreshInterfaceName();
+            QTimer::singleShot(600, this, [this]() {
+                refreshInterfaceName();
+            });
         }
     }
 }
@@ -735,6 +770,10 @@ void Backend::onProcessError(QProcess::ProcessError error) {
 
 void Backend::onTimerTick() {
     if (m_state != Connected || m_connectedTimestamp <= 0) return;
+
+    if (m_vpnInterface == "—" || m_vpnInterface.isEmpty()) {
+        refreshInterfaceName();
+    }
 
     qint64 elapsed = QDateTime::currentSecsSinceEpoch() - m_connectedTimestamp;
     int hours = static_cast<int>(elapsed / 3600);
