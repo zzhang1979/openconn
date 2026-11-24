@@ -24,8 +24,12 @@ configuration.
 |---|---|
 | Omarchy with Quickshell support | Omarchy |
 | Qt >= 6.12 | Omarchy |
-| `openconnect` | `sudo pacman -S openconnect` |
-| Qt 6 build tools (for the GUI) | `sudo pacman -S qt6-base qt6-declarative` |
+| `openconnect` (`openconnect` package) | Arch extra repo |
+| Qt 6 build tools: `qt6-base`, `qt6-declarative` | Arch extra repo |
+
+Install the Arch packages listed above through your normal package manager if
+they are missing. The table is the complete set; the plugin itself installs
+nothing.
 
 ### Install
 
@@ -42,8 +46,8 @@ build and install the application into your user profile:
 ```
 
 `bin/install` copies `openconn` into `~/.local/bin` and registers a desktop
-entry and icon under `~/.local/share`. It runs entirely as your user and never
-prompts for sudo.
+entry and icon under `~/.local/share`. It runs entirely as your user and needs
+no elevated permissions.
 
 ### Remove
 
