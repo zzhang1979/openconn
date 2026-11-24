@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "zzhang.openconn",
+  "name": "OpenConn",
+  "version": "1.0.0",
+  "author": "Zhisong Zhang",
+  "license": "MIT",
+  "description": "OpenConnect SSL VPN client bar widget, connection status monitor, and quick launcher.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "plugin/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OpenConn",
+    "description": "Quick OpenConnect VPN connection status, assigned IP, and toggle.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
