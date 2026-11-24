@@ -1,20 +1,28 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QIcon>
+#include <QMenu>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QQuickWindow>
+#include <QSystemTrayIcon>
 #include <QUrl>
 
 #include "backend.h"
 #include "theme.h"
 
 int main(int argc, char *argv[]) {
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setApplicationName("openconn");
     app.setApplicationDisplayName("OpenConn");
     app.setApplicationVersion("1.0.0");
     app.setDesktopFileName("openconn");
-    app.setWindowIcon(QIcon::fromTheme("openconn"));
+
+    QIcon appIcon(":/openconn.svg");
+    if (appIcon.isNull()) {
+        appIcon = QIcon::fromTheme("openconn");
+    }
+    app.setWindowIcon(appIcon);
 
     QQuickStyle::setStyle("Material");
 
@@ -29,6 +37,70 @@ int main(int argc, char *argv[]) {
     if (engine.rootObjects().isEmpty()) {
         return 1;
     }
+
+    QQuickWindow *mainWindow = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+
+    // Setup System Tray Icon
+    QSystemTrayIcon trayIcon(appIcon, &app);
+    trayIcon.setToolTip("OpenConn — VPN Client");
+
+    QMenu trayMenu;
+    QAction *showAction = trayMenu.addAction("Show OpenConn");
+    QAction *toggleVpnAction = trayMenu.addAction("Connect VPN");
+    trayMenu.addSeparator();
+    QAction *quitAction = trayMenu.addAction("Quit");
+
+    trayIcon.setContextMenu(&trayMenu);
+
+    // Update tray status dynamically
+    auto updateTray = [&]() {
+        if (backend.connectionState() == Backend::Connected) {
+            toggleVpnAction->setText("Disconnect VPN");
+            trayIcon.setToolTip(QString("OpenConn: Connected (%1)").arg(backend.assignedIp()));
+        } else if (backend.connectionState() == Backend::Connecting) {
+            toggleVpnAction->setText("Connecting...");
+            trayIcon.setToolTip("OpenConn: Connecting...");
+        } else if (backend.connectionState() == Backend::Disconnecting) {
+            toggleVpnAction->setText("Disconnecting...");
+            trayIcon.setToolTip("OpenConn: Disconnecting...");
+        } else {
+            toggleVpnAction->setText("Connect VPN");
+            trayIcon.setToolTip("OpenConn: Disconnected");
+        }
+    };
+
+    QObject::connect(&backend, &Backend::connectionStateChanged, updateTray);
+    QObject::connect(&backend, &Backend::assignedIpChanged, updateTray);
+
+    QObject::connect(toggleVpnAction, &QAction::triggered, &backend, &Backend::toggleConnect);
+    QObject::connect(quitAction, &QAction::triggered, &app, &QApplication::quit);
+
+    auto showWindow = [mainWindow]() {
+        if (mainWindow) {
+            mainWindow->showNormal();
+            mainWindow->raise();
+            mainWindow->requestActivate();
+        }
+    };
+
+    QObject::connect(showAction, &QAction::triggered, showWindow);
+
+    QObject::connect(&trayIcon, &QSystemTrayIcon::activated, [mainWindow](QSystemTrayIcon::ActivationReason reason) {
+        if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
+            if (mainWindow) {
+                if (mainWindow->isVisible() && mainWindow->visibility() != QWindow::Minimized) {
+                    mainWindow->hide();
+                } else {
+                    mainWindow->showNormal();
+                    mainWindow->raise();
+                    mainWindow->requestActivate();
+                }
+            }
+        }
+    });
+
+    trayIcon.show();
+    updateTray();
 
     return app.exec();
 }

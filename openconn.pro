@@ -1,4 +1,4 @@
-QT += core gui qml quick quickcontrols2 network
+QT += core gui qml quick quickcontrols2 network widgets
 
 CONFIG += c++17 release
 TARGET = openconn

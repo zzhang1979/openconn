@@ -35,6 +35,9 @@ ApplicationWindow {
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
     Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; onActivated: root.showHelp = !root.showHelp }
 
+    Shortcut { sequence: "Ctrl+M"; context: Qt.ApplicationShortcut; onActivated: root.showMinimized() }
+    Shortcut { sequence: "Ctrl+W"; context: Qt.ApplicationShortcut; onActivated: root.hide() }
+
     function protocolIndex(val) {
         for (var i = 0; i < protocols.length; i++) {
             if (protocols[i].value === val) return i;
@@ -42,11 +45,73 @@ ApplicationWindow {
         return 0;
     }
 
-    // Main layout
-    RowLayout {
+    // Root layout
+    ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        spacing: 16
+        anchors.margins: 14
+        spacing: 10
+
+        // Top App Bar with Minimize and Tray controls
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 10
+
+            Image {
+                source: "qrc:/openconn.svg"
+                sourceSize.width: 24
+                sourceSize.height: 24
+            }
+
+            Label {
+                text: "OpenConn"
+                font.pixelSize: 16
+                font.bold: true
+                color: "#F8FAFC"
+            }
+
+            Label {
+                text: "SSL VPN Client"
+                font.pixelSize: 12
+                color: "#64748B"
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Button {
+                text: "Shortcuts (?)"
+                flat: true
+                onClicked: root.showHelp = !root.showHelp
+            }
+
+            Button {
+                text: "Policy Info"
+                flat: true
+                onClicked: root.showPolkitInfo = true
+            }
+
+            Button {
+                text: "— Minimize"
+                flat: true
+                ToolTip.visible: hovered
+                ToolTip.text: "Minimize Window (Ctrl+M)"
+                onClicked: root.showMinimized()
+            }
+
+            Button {
+                text: "🗖 Hide to Tray"
+                flat: true
+                Material.foreground: theme.accent
+                ToolTip.visible: hovered
+                ToolTip.text: "Hide to System Tray (Ctrl+W)"
+                onClicked: root.hide()
+            }
+        }
+
+        // Main panels layout
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 16
 
         // Left Panel: Profiles and Configuration
         Rectangle {

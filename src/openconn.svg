@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+  <!-- Background squircle -->
+  <rect width="64" height="64" rx="14" fill="url(#bgGrad)"/>
+  
+  <!-- Outer shield outline -->
+  <path d="M32 10 L48 16 V28 C48 39.5 41.2 49.8 32 54 C22.8 49.8 16 39.5 16 28 V16 Z" 
+        fill="url(#shieldGrad)" />
+
+  <!-- Inner shield highlight -->
+  <path d="M32 14 L44 19 V28 C44 37.5 38.8 46 32 49.8 V14 Z" 
+        fill="#60A5FA" opacity="0.3"/>
+
+  <!-- Keyhole / Connect symbol -->
+  <circle cx="32" cy="27" r="4.5" fill="#FFFFFF"/>
+  <path d="M29.5 28 L28 40 H36 L34.5 28 Z" fill="#FFFFFF"/>
+  <circle cx="32" cy="38" r="2" fill="#2563EB"/>
+</svg>
