@@ -607,6 +607,7 @@ ApplicationWindow {
             }
         }
     }
+    }
 
     // Help Dialog
     Dialog {
