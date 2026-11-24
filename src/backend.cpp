@@ -648,6 +648,7 @@ void Backend::startPhase2Tunnel(const QString &cookie, const QString &connectUrl
         arguments << QString("--resolve=%1").arg(resolve);
     }
     arguments << QString("--setuid=%1").arg(currentUser);
+    arguments << QString("--pid-file=/tmp/openconn.pid");
 
     QString extraArgs = profileExtraArgs().trimmed();
     if (!extraArgs.isEmpty()) {
@@ -712,6 +713,22 @@ void Backend::disconnectVpn() {
     m_durationTimer->stop();
     appendLog("[OpenConn] Terminating connection...");
 
+    // Send SIGINT directly to the openconnect PID from pid-file
+    QFile pidFile("/tmp/openconn.pid");
+    if (pidFile.open(QIODevice::ReadOnly)) {
+        pid_t ocPid = pidFile.readAll().trimmed().toInt();
+        pidFile.close();
+        if (ocPid > 0) {
+            ::kill(ocPid, SIGINT);
+        }
+        QFile::remove("/tmp/openconn.pid");
+    }
+
+    // Also ensure any lingering user-space openconnect process receives SIGINT
+    QString currentUser = QString::fromUtf8(qgetenv("USER"));
+    if (currentUser.isEmpty()) currentUser = "anthony";
+    QProcess::execute("pkill", {"-2", "-u", currentUser, "-x", "openconnect"});
+
     if (m_authProcess && m_authProcess->state() != QProcess::NotRunning) {
         m_authProcess->terminate();
         m_authProcess->kill();
@@ -724,7 +741,7 @@ void Backend::disconnectVpn() {
         }
         m_tunnelProcess->terminate();
 
-        QTimer::singleShot(3000, this, [this]() {
+        QTimer::singleShot(2500, this, [this]() {
             if (m_tunnelProcess && m_tunnelProcess->state() != QProcess::NotRunning) {
                 m_tunnelProcess->kill();
             }
