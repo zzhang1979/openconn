@@ -6,10 +6,15 @@
 #include <QJsonDocument>
 #include <QNetworkInterface>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QUrl>
 #include <QUuid>
 #include <csignal>
 #include <sys/types.h>
+
+bool Backend::isOpenconnectInstalled() const {
+    return QFile::exists("/usr/bin/openconnect") || !QStandardPaths::findExecutable("openconnect").isEmpty();
+}
 
 Backend::Backend(const QString &configDir, QObject *parent)
     : QObject(parent),

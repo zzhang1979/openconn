@@ -23,6 +23,8 @@ class Backend : public QObject {
     Q_PROPERTY(QString logs READ logs NOTIFY logsChanged)
     Q_PROPERTY(bool hasPolkitRule READ hasPolkitRule NOTIFY hasPolkitRuleChanged)
     Q_PROPERTY(bool waitingForCertPrompt READ waitingForCertPrompt NOTIFY waitingForCertPromptChanged)
+    Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
+    Q_PROPERTY(bool isOpenconnectInstalled READ isOpenconnectInstalled CONSTANT)
 
     // Dedicated direct reactive properties for the active profile fields
     Q_PROPERTY(QString profileName READ profileName WRITE setProfileName NOTIFY profileNameChanged)
@@ -58,6 +60,8 @@ public:
     QString logs() const { return m_logs; }
     bool hasPolkitRule() const { return m_hasPolkitRule; }
     bool waitingForCertPrompt() const { return m_waitingForCertPrompt; }
+    QString appVersion() const { return "1.0.0"; }
+    bool isOpenconnectInstalled() const;
 
     // Active profile field getters
     QString profileName() const;

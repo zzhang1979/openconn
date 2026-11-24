@@ -18,6 +18,14 @@ int main(int argc, char *argv[]) {
     app.setApplicationVersion("1.0.0");
     app.setDesktopFileName("openconn");
 
+    for (int i = 1; i < argc; ++i) {
+        QString arg = QString::fromLocal8Bit(argv[i]);
+        if (arg == "--version" || arg == "-v") {
+            fprintf(stdout, "OpenConn %s\n", app.applicationVersion().toUtf8().constData());
+            return 0;
+        }
+    }
+
     QIcon appIcon(":/openconn.svg");
     if (appIcon.isNull()) {
         appIcon = QIcon::fromTheme("openconn");

@@ -69,6 +69,21 @@ ApplicationWindow {
                 color: "#F8FAFC"
             }
 
+            Rectangle {
+                color: "#334155"
+                radius: 4
+                implicitWidth: verLabel.implicitWidth + 10
+                implicitHeight: verLabel.implicitHeight + 4
+                Label {
+                    id: verLabel
+                    anchors.centerIn: parent
+                    text: "v" + backend.appVersion
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: "#94A3B8"
+                }
+            }
+
             Label {
                 text: "SSL VPN Client"
                 font.pixelSize: 12
@@ -104,6 +119,30 @@ ApplicationWindow {
                 ToolTip.visible: hovered
                 ToolTip.text: "Hide to System Tray (Ctrl+W)"
                 onClicked: root.hide()
+            }
+        }
+
+        // OpenConnect Missing Prerequisite Banner
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: 38
+            color: "#7F1D1D"
+            radius: theme.radius
+            visible: !backend.isOpenconnectInstalled
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+
+                Label {
+                    text: "⚠️ Warning: OpenConnect binary not found on your PATH. Please install 'openconnect' to establish VPN tunnels."
+                    font.pixelSize: 12
+                    font.bold: true
+                    color: "#FECACA"
+                    Layout.fillWidth: true
+                }
             }
         }
 
