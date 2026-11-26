@@ -30,6 +30,7 @@ Backend::Backend(const QString &configDir, QObject *parent)
 }
 
 Backend::~Backend() {
+    disconnect();
     disconnectVpn();
     if (m_tunnelProcess && m_tunnelProcess->state() != QProcess::NotRunning) {
         m_tunnelProcess->waitForFinished(1000);

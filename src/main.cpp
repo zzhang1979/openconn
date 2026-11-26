@@ -110,5 +110,9 @@ int main(int argc, char *argv[]) {
     trayIcon.show();
     updateTray();
 
-    return app.exec();
+    int ret = app.exec();
+
+    QObject::disconnect(&backend, nullptr, nullptr, nullptr);
+
+    return ret;
 }
