@@ -73,10 +73,18 @@ rm -f ~/.local/bin/openconn \
 
 ## Credentials and privileges
 
-Profiles store server addresses, protocols (Cisco AnyConnect, GlobalProtect,
-Pulse, Fortinet, and others), usernames, passwords, and 2FA settings locally
-with `0600` permissions. Tunnel creation and route cleanup go through polkit, so
-no passwordless sudoers entries are installed.
+- Profiles store server addresses, protocols (Cisco AnyConnect, GlobalProtect,
+  Pulse, Fortinet, and others), usernames, passwords, and 2FA settings locally
+  in `~/.config/openconn/profiles.json` with strict `0600` permissions.
+- **Session Cookie Isolation**: VPN session cookies are passed to elevated processes
+  via `--cookie-on-stdin` rather than command-line arguments, preventing credentials
+  from appearing in `ps` process trees or system authorization logs (`LOG_AUTHPRIV`).
+- **Safe Certificate Pinning**: Self-signed or untrusted server certificate hashes
+  are held in temporary memory and only pinned to the profile if explicitly accepted
+  by the user. Aborted connections discard candidate pins without trusting them on retry.
+- **Hardened Polkit Rule**: The optional passwordless helper rule strictly authorizes
+  the standard system `/etc/vpnc/vpnc-script` and blocks arbitrary caller-selected scripts
+  (`--script`, `--csd-wrapper`, `--trojan`) to prevent unprivileged root code execution.
 
 ## Build
 

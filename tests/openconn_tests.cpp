@@ -103,6 +103,33 @@ private slots:
         QCOMPARE(backend.statusText(), QString("Connected"));
         QCOMPARE(backend.assignedIp(), QString("10.31.10.62"));
     }
+
+    void testCertificatePinningOnlyOnAcceptAndDiscardOnReject() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        Backend backend(dir.path());
+        QCOMPARE(backend.profileServercert(), QString(""));
+
+        // 1. Candidate cert detected from OpenConnect log output
+        backend.simulateLogLine("To trust this server in future, perhaps add this to your command line: --servercert pin-sha256:FAKEHASH123=");
+        // The cert MUST NOT be auto-saved into the profile before user approval
+        QCOMPARE(backend.profileServercert(), QString(""));
+
+        // 2. User rejects the certificate
+        backend.rejectServerCert();
+        // The profile remains clean and untrusted
+        QCOMPARE(backend.profileServercert(), QString(""));
+
+        // 3. Next attempt prompts with legitimate cert pin
+        backend.simulateLogLine("To trust this server in future, perhaps add this to your command line: --servercert pin-sha256:TRUSTEDHASH456=");
+        QCOMPARE(backend.profileServercert(), QString(""));
+
+        // 4. User explicitly accepts
+        backend.acceptServerCert();
+        // Now the trusted pin is saved to the profile
+        QCOMPARE(backend.profileServercert(), QString("pin-sha256:TRUSTEDHASH456="));
+    }
 };
 
 QTEST_MAIN(OpenConnTests)

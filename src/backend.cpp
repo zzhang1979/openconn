@@ -53,6 +53,21 @@ QString Backend::getPolkitRuleSnippet() const {
         "    if (action.id == \"org.freedesktop.policykit.exec\" &&\n"
         "        action.lookup(\"program\") == \"/usr/bin/openconnect\" &&\n"
         "        subject.isInGroup(\"wheel\")) {\n"
+        "        var cmd = action.lookup(\"command_line\") || \"\";\n"
+        "        // Prevent execution of arbitrary custom scripts or trojans as root\n"
+        "        if (cmd.indexOf(\"--script=\") !== -1 || cmd.indexOf(\" -s \") !== -1 || cmd.indexOf(\" -s=\") !== -1) {\n"
+        "            if (cmd.indexOf(\"--script=/etc/vpnc/vpnc-script\") === -1 &&\n"
+        "                cmd.indexOf(\"-s /etc/vpnc/vpnc-script\") === -1) {\n"
+        "                return polkit.Result.NO;\n"
+        "            }\n"
+        "        }\n"
+        "        if (cmd.indexOf(\"--csd-wrapper\") !== -1 || cmd.indexOf(\"--trojan\") !== -1) {\n"
+        "            return polkit.Result.NO;\n"
+        "        }\n"
+        "        return polkit.Result.YES;\n"
+        "    }\n"
+        "    if (action.id.indexOf(\"org.freedesktop.resolve1.\") === 0 &&\n"
+        "        subject.isInGroup(\"wheel\")) {\n"
         "        return polkit.Result.YES;\n"
         "    }\n"
         "});\n"
@@ -379,8 +394,21 @@ void Backend::acceptServerCert() {
     m_waitingForCertPrompt = false;
     emit waitingForCertPromptChanged();
 
+    if (!m_pendingServerCert.isEmpty()) {
+        setProfileServercert(m_pendingServerCert);
+        appendLog(QString("[OpenConn] Trusted and saved server certificate pin: %1").arg(m_pendingServerCert));
+        m_pendingServerCert.clear();
+    }
     appendLog("[OpenConn] Accepting server certificate...");
     sendInput("yes");
+}
+
+void Backend::rejectServerCert() {
+    m_waitingForCertPrompt = false;
+    emit waitingForCertPromptChanged();
+    m_pendingServerCert.clear();
+    appendLog("[OpenConn] Rejected untrusted server certificate (pin discarded).");
+    sendInput("no");
 }
 
 void Backend::refreshInterfaceName() {
@@ -429,11 +457,8 @@ void Backend::parseLogOutput(const QString &text) {
     static const QRegularExpression certRegex(R"re(--servercert\s+(pin-sha256:[^\s\r\n]+|[0-9a-fA-F]{40,}))re");
     auto matchCert = certRegex.match(text);
     if (matchCert.hasMatch()) {
-        QString fingerprint = matchCert.captured(1);
-        if (profileServercert() != fingerprint) {
-            setProfileServercert(fingerprint);
-            appendLog(QString("[OpenConn] Auto-saved server certificate: %1").arg(fingerprint));
-        }
+        m_pendingServerCert = matchCert.captured(1);
+        appendLog(QString("[OpenConn] Candidate server certificate detected: %1 (pending user acceptance)").arg(m_pendingServerCert));
     }
 
     // Detect certificate confirmation prompt
@@ -517,6 +542,7 @@ void Backend::startPhase1Auth() {
     QString servercert = profileServercert().trimmed();
 
     m_waitingForCertPrompt = false;
+    m_pendingServerCert.clear();
     emit waitingForCertPromptChanged();
 
     setState(Connecting, "Authenticating with gateway...");
@@ -645,7 +671,7 @@ void Backend::startPhase2Tunnel(const QString &cookie, const QString &connectUrl
 
     QStringList arguments;
     arguments << "/usr/bin/openconnect";
-    arguments << QString("-C%1").arg(cookie);
+    arguments << "--cookie-on-stdin";
     arguments << connectUrl;
     if (!fingerprint.isEmpty()) {
         arguments << QString("--servercert=%1").arg(fingerprint);
@@ -667,8 +693,11 @@ void Backend::startPhase2Tunnel(const QString &cookie, const QString &connectUrl
             this, &Backend::onTunnelFinished);
     connect(m_tunnelProcess, &QProcess::errorOccurred, this, &Backend::onProcessError);
 
-    // Launch Phase 2 elevated with pkexec
+    // Launch Phase 2 elevated with pkexec passing cookie securely via stdin
     m_tunnelProcess->start("pkexec", arguments);
+    if (m_tunnelProcess->waitForStarted(3000)) {
+        m_tunnelProcess->write(cookie.toUtf8() + "\n");
+    }
 }
 
 void Backend::onTunnelReadyRead() {

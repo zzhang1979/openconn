@@ -3,3 +3,11 @@ build/
 *.o
 moc_*
 qrc_*
+Makefile
+openconn
+*.moc
+target_wrapper.sh
+tests/Makefile
+tests/openconn_tests
+tests/target_wrapper.sh
+

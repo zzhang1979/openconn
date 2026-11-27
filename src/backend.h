@@ -95,6 +95,7 @@ public:
     Q_INVOKABLE void clearLogs();
     Q_INVOKABLE void sendInput(const QString &text);
     Q_INVOKABLE void acceptServerCert();
+    Q_INVOKABLE void rejectServerCert();
     Q_INVOKABLE void fetchCertificateFingerprint();
     Q_INVOKABLE QString getPolkitRuleSnippet() const;
     Q_INVOKABLE void simulateLogLine(const QString &line) { parseLogOutput(line); }
@@ -160,6 +161,7 @@ private:
     QString m_logs;
     bool m_hasPolkitRule{false};
     bool m_waitingForCertPrompt{false};
+    QString m_pendingServerCert;
 
     QProcess *m_authProcess{nullptr};
     QProcess *m_tunnelProcess{nullptr};

@@ -578,7 +578,7 @@ ApplicationWindow {
                                 text: "Abort (no)"
                                 flat: true
                                 Material.foreground: "#FCA5A5"
-                                onClicked: backend.sendInput("no")
+                                onClicked: backend.rejectServerCert()
                             }
                         }
                     }
